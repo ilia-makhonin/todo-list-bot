@@ -1,0 +1,5 @@
+HOST = 'localhost'
+USER = 'root'
+PASS = '123456'
+DB = 'todo_list'
+CHARSET = 'utf8mb4'
