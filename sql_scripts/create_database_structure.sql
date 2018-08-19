@@ -9,10 +9,11 @@ CREATE TABLE IF NOT EXISTS `users` (
 
 CREATE TABLE IF NOT EXISTS `sections` (
     `id` INT(11) NOT NULL AUTO_INCREMENT,
-    `section_name` INT(11) NOT NULL,
+    `section_name` VARCHAR(50) NOT NULL,
     `user` INT(9) NOT NULL,
     PRIMARY KEY(`id`),
     FOREIGN KEY (`user`) REFERENCES `users`(`id`)
+        ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS `section_tasks` (
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS `section_tasks` (
     `section` INT(11) NOT NULL,
     PRIMARY KEY(`id`),
     FOREIGN KEY (`section`) REFERENCES `sections`(`id`)
+        ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS `other_tasks` (
@@ -29,4 +31,5 @@ CREATE TABLE IF NOT EXISTS `other_tasks` (
     `user` INT(9) NOT NULL,
     PRIMARY KEY(`id`),
     FOREIGN KEY (`user`) REFERENCES `users`(`id`)
+        ON DELETE CASCADE ON UPDATE CASCADE
 );
