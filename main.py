@@ -1,77 +1,112 @@
-# -*- coding: utf-8 -*-
-
 import telebot
 import utils
-import bot_token
 import mysql
 
-bot = telebot.TeleBot('553436841:AAF2SSE5eVnLq_rV231OuGJDD3hqr_cf9eU')
+bot = telebot.TeleBot('553436841:AAE7LE-DzZp3AKi4QLH185UX9ZCMjZ449rY')
 
-condition = dict()                  #Состояние пользователей(ожидание ввода и т.д.)
-business = dict()                   #Список общих дел пользователей
-list_business = dict()              #Списки дел
-edit_business = None
+users = dict()                  # Состояние пользователей(ожидание ввода и т.д.)
 
 
 @bot.message_handler(commands=['start'])
 def start_handler(message):
-    chat_id = message.chat.id
-    bot.send_message(chat_id, utils.start_text)
-    condition[chat_id] = utils.Waiting.STANDART.value          #Пользователь добавляется в БД
-    mysql.user_db(message.from_user.id, message.from_user.first_name)
-    business[chat_id] = []
-    list_business[chat_id] = []
-    business_handler(message)
-
-
-@bot.callback_query_handler(func=lambda call: True)  #Ответ на кнопки
-def callback_handler(call):
-    global edit_business
-    if call.data == "Новое дело":
-        bot.send_message(call.from_user.id, 'Введите название дела')
-        condition[call.from_user.id] = utils.Waiting.WAITING_BUSINESS.value
-    elif call.data == "Удалить дело":
-        markup = utils.create_markup(business[call.from_user.id])
-        bot.send_message(call.from_user.id, 'Выберите, какое дело вы хотите удалить:', reply_markup=markup)
-        condition[call.from_user.id] = utils.Waiting.EDIT_BUSINESS.value
-    elif condition[call.from_user.id] == utils.Waiting.EDIT_BUSINESS.value:
-        markup = utils.create_markup(('Удалить',))
-        edit_business = call.data
-        bot.send_message(call.from_user.id, 'Вы выбрали дело "{}"'.format(call.data), reply_markup=markup)
-        condition[call.from_user.id] = utils.Waiting.EDIT_BUSINESS_WAITING_RESPONSE
-    elif condition[call.from_user.id] == utils.Waiting.EDIT_BUSINESS_WAITING_RESPONSE:
-        business[call.from_user.id].remove(edit_business)
-        business_handler(call)
-
-
-def business_handler(call):
-    try:
-        chat_id = call.chat.id
-    except AttributeError:
-        chat_id = call.message.chat.id
-
-    condition[chat_id] = utils.Waiting.STANDART.value
+    user_id = message.from_user.id
     markup = utils.create_markup([
-        "Новое дело", "Удалить дело", "Мои списки дел", "Новый список дел"
-    ])
-    if len(business[chat_id]) == 0:
-        bot.send_message(chat_id, utils.business_0, reply_markup=markup)
-    else:
-        bot.send_message(chat_id, utils.list_of_business(business[chat_id]), reply_markup=markup)
+        {'key': 'Добавить дело', 'call': 'new_task'},
+        {'key': 'Новый раздел', 'call': 'new_list'}
+    ], 'key', 'call')
+    bot.send_message(user_id, utils.start_text, reply_markup=markup)
+    mysql.user_db(user_id, message.from_user.first_name)  # Сохранение пользователя в БД
+    users[user_id] = {'action': None, 'tasks': None}      # Объект с действием пользователя и актуальным списком дел
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    answer = call.data                                # Обработка действий из основного списка
+    user_id = call.from_user.id                       # 1) Добавить дело
+    if answer == 'new_task':                          # 2) Создать раздел
+        text = 'Введите то, что Вы хотите сделать:'   # 3) Добавить дело в раздел
+        bot.send_message(user_id, text)               # 4) Удалить дело
+        users[user_id]['action'] = 'nt'               # 5) Удалить раздел
+    elif answer == 'new_list':
+        text = 'Введите название нового раздела:'
+        bot.send_message(user_id, text)
+        users[user_id]['action'] = 'nl'
+    elif answer == 'rm_task':
+        text = 'Какое дело Вы хотите удалить:'
+        bot.send_message(user_id, text)
+        users[user_id]['action'] = 'rt'
+    elif answer == 'rm_list':
+        text = 'Какой раздел Вы хотите удалить:'
+        bot.send_message(user_id, text)
+        users[user_id]['action'] = 'rl'
+    elif answer == 'new_task_in_section':
+        sections = mysql.get_task_for_user(user_id)
+        print(sections[0])
+        if sections[0][0]['section'] is None:              # Проверка - есть ли у пользователя разделы
+            text = 'У вас нет не одного раздела. Выбирете \"Новый раздел\" что бы создать раздел!'
+            new_list = telebot.types.InlineKeyboardMarkup()
+            new_list.add(telebot.types.InlineKeyboardButton('Новый раздел', callback_data='new_list'))
+            bot.send_message(user_id, text, reply_markup=new_list)
+            return True                          # Отобразить кнопку создания раздела, если у пользователя их нет
+        markup = utils.create_markup(sections[0], 'section', 'section')
+        text = 'Выбирете раздел, в который хотите добавить задачу:'
+        bot.send_message(user_id, text, reply_markup=markup)
+        users[user_id]['action'] = 'nts'
+    else:                       # Второй уровень обработки действий
+        if users[user_id]['action'] == 'nts':
+            pass                # Добавление дела в выбранный раздел, удаление дела, удаление раздела
+        if users[user_id]['action'] == 'rt':
+            pass
+        if users[user_id]['action'] == 'rl':
+            pass
 
 
 @bot.message_handler(func=lambda message: True)
-def new_business(message):
+def text_handler(message):              # Обработка текстовых сообщений
+    user_id = message.from_user.id
+    text_task = message.text
+
     try:
-        if condition[message.chat.id] == utils.Waiting.WAITING_BUSINESS.value:
-            business[message.chat.id].append(message.text)
-            bot.send_message(message.chat.id, 'Отлично, дело добавлено')
-            business_handler(message)
-        else:
-            business_handler(message)
+        if users[user_id]['action'] == 'nt':
+            bot.send_message(user_id, 'Дело добавленно!')
+            add_task(user_id, text_task)
+        if users[user_id]['action'] == 'nl':
+            bot.send_message(user_id, 'Список создан!')
+            add_section(user_id, text_task)
     except KeyError:
-        business[message.chat.id] = []
-        business_handler(message)
+        users[user_id] = {'action': None, 'tasks': None}
+        business_handler(user_id)
+
+
+def business_handler(user_id):
+    text = 'Что Вы хотите сделать?'
+    markup = utils.create_markup([
+        {'key': 'Добавить дело', 'call': 'new_task'},
+        {'key': 'Добавить дело в раздел', 'call': 'new_task_in_section'},
+        {'key': 'Новый раздел', 'call': 'new_list'},
+        {'key': 'Удалить дело', 'call': 'rm_task'},
+        {'key': 'Удалить раздел', 'call': 'rm_list'}
+    ], 'key', 'call')
+    bot.send_message(user_id, text, reply_markup=markup)
+
+
+def add_task(user_id, task, section=None):
+    mysql.add_task(task, user_id, section=section)               # Добавление дела в БД
+    text = utils.get_tasks(mysql.get_task_for_user(user_id))     # Актуальный список дел пользователя
+    bot.send_message(user_id, text)
+    users[user_id]['action'] = None
+
+
+def add_section(user_id, section_name):
+    mysql.add_task_list(user_id, section_name)                   # Добавление раздела в БД
+    text = utils.get_tasks(mysql.get_task_for_user(user_id))     # Актуальный список дел пользователя
+    bot.send_message(user_id, text)
+    users[user_id]['action'] = None
+
+
+def remove():
+    # Удаляет дело из общего списка или из созданного пользователем списка
+    pass
 
 
 if __name__ == "__main__":
