@@ -2,7 +2,7 @@ import telebot
 import utils
 import mysql
 
-bot = telebot.TeleBot('553436841:AAE7LE-DzZp3AKi4QLH185UX9ZCMjZ449rY')
+bot = telebot.TeleBot('token')
 
 users = dict()                  # Состояние пользователей(ожидание ввода и т.д.)
 
