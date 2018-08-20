@@ -1,9 +1,8 @@
 import telebot
 import utils
-import bot_token
 import mysql
 
-bot = telebot.TeleBot('553436841:AAF2SSE5eVnLq_rV231OuGJDD3hqr_cf9eU')
+bot = telebot.TeleBot('553436841:AAE7LE-DzZp3AKi4QLH185UX9ZCMjZ449rY')
 
 users = dict()                  # Состояние пользователей(ожидание ввода и т.д.)
 
@@ -12,12 +11,12 @@ users = dict()                  # Состояние пользователей(
 def start_handler(message):
     user_id = message.from_user.id
     markup = create_markup([
-        ['Новое дело', 'new_task'],
-        ['Новый список', 'new_list']
-    ])
+        {'key': 'Добавить дело', 'call': 'new_task'},
+        {'key': 'Новый раздел', 'call': 'new_list'}
+    ], 'key', 'call')
     bot.send_message(user_id, utils.start_text, reply_markup=markup)
     mysql.user_db(user_id, message.from_user.first_name)
-    users[user_id] = None
+    users[user_id] = {'action': None, 'tasks': None}
 
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -27,69 +26,101 @@ def callback_handler(call):
     if answer == 'new_task':
         text = 'Введите то, что Вы хотите сделать:'
         bot.send_message(user_id, text)
-        users[user_id] = 'nt'
+        users[user_id]['action'] = 'nt'
     elif answer == 'new_list':
         text = 'Введите название нового раздела:'
         bot.send_message(user_id, text)
-        users[user_id] = 'nl'
+        users[user_id]['action'] = 'nl'
     elif answer == 'rm_task':
         text = 'Какое дело Вы хотите удалить:'
         bot.send_message(user_id, text)
-        users[user_id] = 'rt'
+        users[user_id]['action'] = 'rt'
     elif answer == 'rm_list':
         text = 'Какой раздел Вы хотите удалить:'
         bot.send_message(user_id, text)
-        users[user_id] = 'rl'
+        users[user_id]['action'] = 'rl'
     elif answer == 'new_task_in_section':
-        text = 'Введите название раздела и то, что Вы хотите сделать:'
-        bot.send_message(user_id, text)
-        users[user_id] = 'nts'
+        sections = mysql.get_task_for_user(user_id)
+        print(sections[0])
+        if sections[0][0]['section'] is None:
+            text = 'У вас нет не одного раздела. Выбирете \"Новый раздел\" что бы создать раздел!'
+            new_list = telebot.types.InlineKeyboardMarkup()
+            new_list.add(telebot.types.InlineKeyboardButton('Новый раздел', callback_data='new_list'))
+            bot.send_message(user_id, text, reply_markup=new_list)
+            return True
+        markup = create_markup(sections[0], 'section', 'section')
+        text = 'Выбирете раздел, в который хотите добавить задачу:'
+        bot.send_message(user_id, text, reply_markup=markup)
+        users[user_id]['action'] = 'nts'
+    else:
+        if users[user_id]['action'] == 'nts':
+            pass
+        if users[user_id]['action'] == 'rt':
+            pass
+        if users[user_id]['action'] == 'rl':
+            pass
 
 
 @bot.message_handler(func=lambda message: True)
 def text_handler(message):
-    print('func "text_handler" -', message.text)
-    business_handler(message.from_user.id)
-    # Логика работы с текстовыми сообщениями
+    user_id = message.from_user.id
+    text_task = message.text
+
+    try:
+        if users[user_id]['action'] == 'nt':
+            bot.send_message(user_id, 'Дело добавленно!')
+            add_task(user_id, text_task)
+        if users[user_id]['action'] == 'nl':
+            bot.send_message(user_id, 'Список создан!')
+            add_section(user_id, text_task)
+    except KeyError:
+        users[user_id] = {'action': None, 'tasks': None}
+        business_handler(user_id)
 
 
 def business_handler(user_id):
     text = 'Что Вы хотите сделать?'
     markup = create_markup([
-        ['Добавить дело', 'new_task'],
-        ['Добавить дело в раздел', 'new_task_in_section'],
-        ['Новый раздел', 'new_list'],
-        ['Удалить дело', 'rm_task'],
-        ['Удалить раздел', 'rm_list']
-    ])
+        {'key': 'Добавить дело', 'call': 'new_task'},
+        {'key': 'Добавить дело в раздел', 'call': 'new_task_in_section'},
+        {'key': 'Новый раздел', 'call': 'new_list'},
+        {'key': 'Удалить дело', 'call': 'rm_task'},
+        {'key': 'Удалить раздел', 'call': 'rm_list'}
+    ], 'key', 'call')
     bot.send_message(user_id, text, reply_markup=markup)
-    print('users[{}] = {}'.format(user_id, users[user_id]))
 
 
-def add_task(user_id, task):
-    mysql.add_task(task, user_id)
-    text = mysql.get_task_for_user(user_id)
+def add_task(user_id, task, section=None):
+    mysql.add_task(task, user_id, section=section)
+    text = get_tasks(mysql.get_task_for_user(user_id))
     bot.send_message(user_id, text)
+    users[user_id]['action'] = None
 
 
 def add_section(user_id, section_name):
     mysql.add_task_list(user_id, section_name)
-    text = mysql.get_task_for_user(user_id)
+    text = get_tasks(mysql.get_task_for_user(user_id))
     bot.send_message(user_id, text)
+    users[user_id]['action'] = None
 
-def rm_task(user_id):
+
+def remove():
     # Удаляет дело из общего списка или из созданного пользователем списка
     pass
 
-def rm_section(user_id):
-    # Удаляет раздел
-    pass
+
+# def check_tasks(user_id):
+#     if users[user_id]['tasks'] is None:
+#         tasks = mysql.get_task_for_user(user_id)
+#         users[user_id]['tasks'] = tasks
+#         return tasks
+#     return users[user_id]['tasks']
 
 
-def create_markup(events):
+def create_markup(events, key, call):
     markup = telebot.types.InlineKeyboardMarkup()
     for button in events:
-        markup.add(telebot.types.InlineKeyboardButton(button[0], callback_data=button[1]))
+        markup.add(telebot.types.InlineKeyboardButton(button[key], callback_data=button[call]))
     return markup
 
 
@@ -103,10 +134,36 @@ def get_tasks(tasks_arr):
                     continue
                 output += task['section'] + ': ' + task['tasks'] + '\n'
             if 'other' in task:
+                if task['other'] is None:
+                    continue
                 output += task['other'] + '\n'
     return output
 
 
+# Пример ответа Базы Данных
+# arr = [
+#     [
+#         {'section': 'bd', 'tasks': None, 's_tk': None},
+#         {'section': 'gndx', 'tasks': None, 's_tk': None},
+#         {'section': 'gfn', 'tasks': None, 's_tk': None},
+#         {'section': 'gsngd', 'tasks': None, 's_tk': None},
+#         {'section': 'sfdgbngf', 'tasks': None, 's_tk': None},
+#         {'section': 'dnhnh', 'tasks': None, 's_tk': None},
+#         {'section': 'gfn', 'tasks': None, 's_tk': None},
+#         {'section': 'ndh', 'tasks': None, 's_tk': None},
+#         {'section': 'gfndgn', 'tasks': None, 's_tk': None},
+#         {'section': 'gnsf', 'tasks': None, 's_tk': None},
+#         {'section': 'fgsnsf', 'tasks': None, 's_tk': None},
+#         {'section': 'dfnbg', 'tasks': None, 's_tk': None},
+#         {'section': 'gfb', 'tasks': None, 's_tk': None},
+#         {'section': 'gdngfn', 'tasks': None, 's_tk': None},
+#         {'section': 'fbsdbgn', 'tasks': None, 's_tk': None},
+#         {'section': 'nhdjhsnd', 'tasks': None, 's_tk': None}
+#     ],
+#     [
+#         {'other': None, 'o_id': None}
+#     ]
+# ]
 
 
 if __name__ == "__main__":

@@ -69,20 +69,31 @@ def add_task(task_text, user_id, section=None):
     return True
 
 
-def remove(type_rm, filter):
+def remove(user_id, type_rm, filter):
     connection = pymysql.connect(
         host=HOST, user=USER, password=PASS, db=DB,
         charset=CHARSET, cursorclass=pymysql.cursors.DictCursor
     )
     try:
         with connection.cursor() as cursor:
-            sql = "SELECT * FROM users WHERE user_id=1234567"
-            cursor.execute(sql)
-            result = cursor.fetchone()
+            sql = "SELECT `id` FROM users WHERE user_id=%s"
+            cursor.execute(sql, (user_id,))
+            user = cursor.fetchone()
+            if type_rm == 'section':
+                sql = "DELETE FROM sections WHERE section_name=%s AND `user`=%s"
+                cursor.execute(sql, (filter, user['id']))
+            elif type_rm == 'section_task':
+                sql = "DELETE FROM sections WHERE `section`=%s AND `id`=%s"
+                cursor.execute(sql, (filter['section'], filter['id']))
+            elif type_rm == 'other_task':
+                sql = "DELETE FROM other_tasks WHERE `user`=%s AND `id`=%s"
+                cursor.execute(sql, (user['id'], filter))
+            else:
+                return False
         connection.commit()
     finally:
         connection.close()
-    return result
+    return True
 
 
 def get_task_for_user(user_id):
@@ -92,10 +103,10 @@ def get_task_for_user(user_id):
     )
     try:
         with connection.cursor() as cursor:
-            sql = "SELECT section, tasks FROM `sec_tasks_users` WHERE `user`=%s"
+            sql = "SELECT section, tasks, s_tk FROM `sec_tasks_users` WHERE `user`=%s"
             cursor.execute(sql, (user_id,))
             sections = cursor.fetchall()
-            sql = "SELECT other FROM `oth_tasks_users` WHERE `user`=%s"
+            sql = "SELECT other, o_id FROM `oth_tasks_users` WHERE `user`=%s"
             cursor.execute(sql, (user_id,))
             other = cursor.fetchall()
             return [sections, other]
@@ -103,4 +114,4 @@ def get_task_for_user(user_id):
         connection.close()
 
 if __name__ == '__main__':
-    print(get_task_for_user(123456789))
+    print(get_task_for_user(123456798))
